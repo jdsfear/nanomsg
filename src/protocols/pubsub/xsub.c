@@ -28,6 +28,7 @@
 #include "../../pubsub.h"
 
 #include "../utils/fq.h"
+#include "../utils/dist.h"
 
 #include "../../utils/err.h"
 #include "../../utils/cont.h"
@@ -38,11 +39,14 @@
 
 struct nn_xsub_data {
     struct nn_fq_data fq;
+	struct nn_dist_data item;
 };
 
 struct nn_xsub {
     struct nn_sockbase sockbase;
     struct nn_fq fq;
+	struct nn_dist outpipes;
+	struct nn_dist subs;
     struct nn_trie trie;
 };
 
@@ -58,6 +62,7 @@ static void nn_xsub_rm (struct nn_sockbase *self, struct nn_pipe *pipe);
 static void nn_xsub_in (struct nn_sockbase *self, struct nn_pipe *pipe);
 static void nn_xsub_out (struct nn_sockbase *self, struct nn_pipe *pipe);
 static int nn_xsub_events (struct nn_sockbase *self);
+static int nn_xsub_send(struct nn_sockbase *self, struct nn_msg *msg);
 static int nn_xsub_recv (struct nn_sockbase *self, struct nn_msg *msg);
 static int nn_xsub_setopt (struct nn_sockbase *self, int level, int option,
     const void *optval, size_t optvallen);
@@ -71,7 +76,7 @@ static const struct nn_sockbase_vfptr nn_xsub_sockbase_vfptr = {
     nn_xsub_in,
     nn_xsub_out,
     nn_xsub_events,
-    NULL,
+    nn_xsub_send,
     nn_xsub_recv,
     nn_xsub_setopt,
     nn_xsub_getopt
@@ -120,6 +125,7 @@ static int nn_xsub_add (struct nn_sockbase *self, struct nn_pipe *pipe)
     alloc_assert (data);
     nn_pipe_setdata (pipe, data);
     nn_fq_add (&xsub->fq, &data->fq, pipe, rcvprio);
+	nn_dist_add(&xsub->outpipes, &data->item, pipe);
 
     return 0;
 }
@@ -145,18 +151,28 @@ static void nn_xsub_in (struct nn_sockbase *self, struct nn_pipe *pipe)
     nn_fq_in (&xsub->fq, &data->fq);
 }
 
-static void nn_xsub_out (NN_UNUSED struct nn_sockbase *self,
-    NN_UNUSED struct nn_pipe *pipe)
+static void nn_xsub_out (struct nn_sockbase *self,
+    struct nn_pipe *pipe)
 {
-    /*  We are not going to send any messages until subscription forwarding
-        is implemented, so there's no point is maintaining a list of pipes
-        ready for sending. */
+	// Subscriptions are ready to send to publishers
+
+	struct nn_xsub *xsub;
+	struct nn_xsub_data *data;
+
+	xsub = nn_cont(self, struct nn_xsub, sockbase);
+	data = nn_pipe_getdata(pipe);
+
+	nn_dist_out(&xsub->outpipes, &data->item);
 }
 
 static int nn_xsub_events (struct nn_sockbase *self)
 {
     return nn_fq_can_recv (&nn_cont (self, struct nn_xsub, sockbase)->fq) ?
         NN_SOCKBASE_EVENT_IN : 0;
+}
+
+static int nn_xsub_send(struct nn_sockbase *self, struct nn_msg *msg){
+	return 0;
 }
 
 static int nn_xsub_recv (struct nn_sockbase *self, struct nn_msg *msg)

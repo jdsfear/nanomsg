@@ -34,6 +34,8 @@ extern "C" {
 
 #define NN_SUB_SUBSCRIBE 1
 #define NN_SUB_UNSUBSCRIBE 2
+#define NN_SUB_PUBFILTER 3
+#define NN_PUB_PUBFILTER 4
 
 #ifdef __cplusplus
 }
