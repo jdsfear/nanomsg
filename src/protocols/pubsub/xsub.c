@@ -46,8 +46,8 @@ struct nn_xsub {
     struct nn_sockbase sockbase;
     struct nn_fq fq;
 	struct nn_dist outpipes;
-	struct nn_dist subs;
     struct nn_trie trie;
+	int pubfiltering;
 };
 
 /*  Private functions. */
@@ -88,6 +88,7 @@ static void nn_xsub_init (struct nn_xsub *self,
     nn_sockbase_init (&self->sockbase, vfptr, hint);
     nn_fq_init (&self->fq);
     nn_trie_init (&self->trie);
+	self->pubfiltering = 0;
 }
 
 static void nn_xsub_term (struct nn_xsub *self)
@@ -172,7 +173,8 @@ static int nn_xsub_events (struct nn_sockbase *self)
 }
 
 static int nn_xsub_send(struct nn_sockbase *self, struct nn_msg *msg){
-	return 0;
+	return nn_dist_send(&nn_cont(self, struct nn_xsub, sockbase)->outpipes,
+		msg, NULL);
 }
 
 static int nn_xsub_recv (struct nn_sockbase *self, struct nn_msg *msg)
@@ -213,10 +215,18 @@ static int nn_xsub_setopt (struct nn_sockbase *self, int level, int option,
         return -ENOPROTOOPT;
 
     if (option == NN_SUB_SUBSCRIBE) {
-        rc = nn_trie_subscribe (&xsub->trie, optval, optvallen);
-        if (rc >= 0)
-            return 0;
-        return rc;
+		if (!xsub->pubfiltering){
+			rc = nn_trie_subscribe(&xsub->trie, optval, optvallen);
+			if (rc >= 0)
+				return 0;
+			return rc;
+		}
+		else{
+			// Send subscription to publisher
+			struct nn_msg *subdata = malloc(sizeof(struct nn_msg));
+			nn_msg_init(subdata, optvallen);
+			nn_xsub_send(self, subdata);
+		}
     }
 
     if (option == NN_SUB_UNSUBSCRIBE) {
