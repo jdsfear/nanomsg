@@ -97,6 +97,7 @@ static void nn_xpub_init (struct nn_xpub *self,
     const struct nn_sockbase_vfptr *vfptr, void *hint)
 {
     nn_sockbase_init (&self->sockbase, vfptr, hint);
+	nn_fq_init(&self->inpipes);
     nn_dist_init (&self->outpipes);
 	nn_trie_init(&self->trie);
 	self->pubfiltering = 0;
@@ -104,7 +105,9 @@ static void nn_xpub_init (struct nn_xpub *self,
 
 static void nn_xpub_term (struct nn_xpub *self)
 {
-    nn_dist_term (&self->outpipes);
+	nn_trie_term(&self->trie);
+	nn_dist_term(&self->outpipes);
+	nn_fq_term(&self->inpipes);
     nn_sockbase_term (&self->sockbase);
 }
 
@@ -143,7 +146,7 @@ static void nn_xpub_rm (struct nn_sockbase *self, struct nn_pipe *pipe)
     data = nn_pipe_getdata (pipe);
 
     nn_dist_rm (&xpub->outpipes, &data->item);
-
+	nn_fq_rm(&xpub->inpipes, &data->fq);
     nn_free (data);
 }
 
@@ -157,8 +160,9 @@ static void nn_xpub_in (struct nn_sockbase *self,
 
 	xpub = xpub = nn_cont(self, struct nn_xpub, sockbase);
 	data = nn_pipe_getdata(pipe);
-
 	nn_fq_in(&xpub->inpipes, &data->fq);
+
+
 }
 
 static void nn_xpub_out (struct nn_sockbase *self, struct nn_pipe *pipe)
@@ -183,16 +187,37 @@ static int nn_xpub_send (struct nn_sockbase *self, struct nn_msg *msg)
         msg, NULL);
 }
 
-static int nn_xpub_recv(struct nn_sockbase *self, struct nn_msg *message)
+static int nn_xpub_recv(struct nn_sockbase *self, struct nn_msg *msg)
 {
-	return 0;
+	//We have new subscriptions, add them to the trie
+	int rc;
+	struct nn_xpub *xpub;
+	struct nn_pipe *source;
+
+	xpub = nn_cont(self, struct nn_xpub, sockbase);
+
+	while (rc = nn_fq_recv(&xpub->inpipes, msg, &source) != -EAGAIN){
+		//Publisher: Associate each subscription with its pipe.
+		
+	}
 }
 
 static int nn_xpub_setopt (NN_UNUSED struct nn_sockbase *self,
     NN_UNUSED int level, NN_UNUSED int option,
     NN_UNUSED const void *optval, NN_UNUSED size_t optvallen)
 {
-    return -ENOPROTOOPT;
+	int rc;
+	struct nn_xpub *xpub;
+
+	xpub = nn_cont(self, struct nn_xpub, sockbase);
+	
+	if (level != NN_PUB){
+		return -ENOPROTOOPT;
+	}
+	if (option == NN_PUB_PUBFILTER){
+		xpub->pubfiltering = optval ? 1 : 0;
+	}
+	return -ENOPROTOOPT;
 }
 
 static int nn_xpub_getopt (NN_UNUSED struct nn_sockbase *self,

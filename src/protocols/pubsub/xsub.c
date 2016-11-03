@@ -87,6 +87,7 @@ static void nn_xsub_init (struct nn_xsub *self,
 {
     nn_sockbase_init (&self->sockbase, vfptr, hint);
     nn_fq_init (&self->fq);
+	nn_dist_init(&self->outpipes);
     nn_trie_init (&self->trie);
 	self->pubfiltering = 0;
 }
@@ -94,6 +95,7 @@ static void nn_xsub_init (struct nn_xsub *self,
 static void nn_xsub_term (struct nn_xsub *self)
 {
     nn_trie_term (&self->trie);
+	nn_dist_term(&self->outpipes);
     nn_fq_term (&self->fq);
     nn_sockbase_term (&self->sockbase);
 }
@@ -138,6 +140,8 @@ static void nn_xsub_rm (struct nn_sockbase *self, struct nn_pipe *pipe)
 
     xsub = nn_cont (self, struct nn_xsub, sockbase);
     data = nn_pipe_getdata (pipe);
+
+	nn_dist_rm(&xsub->outpipes, &data->item);
     nn_fq_rm (&xsub->fq, &data->fq);
     nn_free (data);
 }
@@ -172,7 +176,8 @@ static int nn_xsub_events (struct nn_sockbase *self)
         NN_SOCKBASE_EVENT_IN : 0;
 }
 
-static int nn_xsub_send(struct nn_sockbase *self, struct nn_msg *msg){
+static int nn_xsub_send(struct nn_sockbase *self, struct nn_msg *msg)
+{
 	return nn_dist_send(&nn_cont(self, struct nn_xsub, sockbase)->outpipes,
 		msg, NULL);
 }
@@ -236,6 +241,10 @@ static int nn_xsub_setopt (struct nn_sockbase *self, int level, int option,
         return rc;
     }
 
+	if (option == NN_SUB_PUBFILTER) {
+		xsub->pubfiltering = optval ? 1 : 0;
+	}
+
     return -ENOPROTOOPT;
 }
 
@@ -260,7 +269,7 @@ int nn_xsub_create (void *hint, struct nn_sockbase **sockbase)
 
 int nn_xsub_ispeer (int socktype)
 {
-    return socktype == NN_PUB ? 1 : 0;
+    return (socktype == NN_PUB) ? 1 : 0;
 }
 
 static struct nn_socktype nn_xsub_socktype_struct = {
